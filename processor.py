@@ -36,13 +36,20 @@ def process_video(video_path, output_dir, conf_threshold=0.5, min_duration=3.0, 
     # YOLO Classes: 0 for person, 32 for tennis ball
     TARGET_CLASSES = [0, 32]
     
-    skip_frames = 2 # Reduced skip for better ball tracking
+    # Optimizations for tennis ball (small object)
+    BALL_CLASS_ID = 32
+    BALL_CONF_THRESHOLD = 0.15 # Much lower for small fast moving objects
+    DETECTION_IMGSZ = 1024     # Higher resolution for small objects
+    
+    skip_frames = 1 # Run on every frame for best tracking if GPU allows
     active_rally_frames = []
     
     # State tracking
     is_in_rally = False
     last_ball_seen_frame = -1
     out_of_frame_tolerance_frames = int(fps * 2.0)
+    
+    ball_detections_count = 0
     
     frame_idx = 0
     while cap.isOpened():
@@ -51,32 +58,29 @@ def process_video(video_path, output_dir, conf_threshold=0.5, min_duration=3.0, 
             break
         
         if frame_idx % skip_frames == 0:
-            results = model(frame, classes=TARGET_CLASSES, conf=conf_threshold, verbose=False)
+            # We use DETECION_IMGSZ to help find the small ball
+            results = model(frame, classes=TARGET_CLASSES, imgsz=DETECTION_IMGSZ, verbose=False)
             boxes = results[0].boxes
             
-            people = [b for b in boxes if int(b.cls[0]) == 0]
-            balls = [b for b in boxes if int(b.cls[0]) == 32]
+            people = [b for b in boxes if int(b.cls[0]) == 0 and b.conf[0] >= conf_threshold]
+            balls = [b for b in boxes if int(b.cls[0]) == BALL_CLASS_ID and b.conf[0] >= BALL_CONF_THRESHOLD]
             
             has_ball = len(balls) > 0
-            
             if has_ball:
+                ball_detections_count += 1
                 last_ball_seen_frame = frame_idx
                 
-                # Check if ball is "on ground" (static heuristic can be complex, 
-                # for now assume if ball is seen it could be a rally)
-                # But let's refine: A rally starts if a ball is seen and there's at least one person
+                # Rally start logic: Ball detected and at least 1 person visible
                 if not is_in_rally and len(people) >= 1:
                     is_in_rally = True
                     print(f"Rally started at frame {frame_idx}")
 
-            # If we are in a rally, check if we should end it
             if is_in_rally:
-                # 3.1: If ball is gone for > 2 seconds
+                # Rally persists as long as the ball was seen recently (within 2s)
                 if frame_idx - last_ball_seen_frame > out_of_frame_tolerance_frames:
                     is_in_rally = False
                     print(f"Rally ended at frame {frame_idx} (timeout)")
                 else:
-                    # 2.2: Still in rally (on fly, hit, or briefly out of camera)
                     for i in range(skip_frames):
                         if frame_idx + i < total_frames:
                             active_rally_frames.append(frame_idx + i)
@@ -90,26 +94,22 @@ def process_video(video_path, output_dir, conf_threshold=0.5, min_duration=3.0, 
     if progress_callback:
         progress_callback(1.0)
     
-    # Post-process segments
     active_rally_frames = sorted(list(set(active_rally_frames)))
     
     stats = {
         "total_frames": total_frames,
         "frames_with_activity": len(active_rally_frames),
+        "ball_detections": ball_detections_count,
         "duration_processed": duration
     }
     
     if not active_rally_frames:
         return stats, []
 
-    # Group into segments
     segments = []
     if active_rally_frames:
         start_f = active_rally_frames[0]
         prev_f = active_rally_frames[0]
-        
-        # We already handled the 2s tolerance in the loop, 
-        # but let's ensure segments are properly split if there's a larger gap
         gap_limit = int(fps * 1.0) 
         
         for f in active_rally_frames[1:]:
@@ -130,7 +130,6 @@ def process_video(video_path, output_dir, conf_threshold=0.5, min_duration=3.0, 
                 for start_f, end_f in segments:
                     seg_duration = (end_f - start_f) / fps
                     if seg_duration >= min_duration:
-                        # Add padding as requested (padding before/after)
                         start_time = max(0, (start_f / fps) - padding)
                         end_time = min(duration, (end_f / fps) + padding)
                         
