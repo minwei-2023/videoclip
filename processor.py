@@ -73,13 +73,13 @@ def process_video(video_path, output_dir, conf_threshold=0.5, min_duration=3.0, 
                 # Rally start logic: Ball detected and at least 1 person visible
                 if not is_in_rally and len(people) >= 1:
                     is_in_rally = True
-                    print(f"Rally started at frame {frame_idx}")
+                    print(f"Rally started at frame {frame_idx} ({frame_idx/fps:.2f}s)")
 
             if is_in_rally:
                 # Rally persists as long as the ball was seen recently (within 2s)
                 if frame_idx - last_ball_seen_frame > out_of_frame_tolerance_frames:
                     is_in_rally = False
-                    print(f"Rally ended at frame {frame_idx} (timeout)")
+                    print(f"Rally ended at frame {frame_idx} ({frame_idx/fps:.2f}s) (timeout)")
                 else:
                     for i in range(skip_frames):
                         if frame_idx + i < total_frames:
