@@ -125,6 +125,9 @@ def process_video(video_path, output_dir, conf_threshold=0.5, min_duration=3.0, 
     clip_paths = []
     
     if segments:
+        # Get original filename without extension
+        original_basename = os.path.splitext(os.path.basename(video_path))[0]
+        
         try:
             with VideoFileClip(video_path) as video:
                 for start_f, end_f in segments:
@@ -132,12 +135,16 @@ def process_video(video_path, output_dir, conf_threshold=0.5, min_duration=3.0, 
                     if seg_duration >= min_duration:
                         start_time = max(0, (start_f / fps) - padding)
                         end_time = min(duration, (end_f / fps) + padding)
+                        actual_duration = end_time - start_time
                         
                         final_clips.append((start_time, end_time))
                         clip_idx = len(final_clips)
-                        output_filename = os.path.join(output_dir, f"rally_{clip_idx}.mp4")
                         
-                        print(f"Extracting rally {clip_idx}: {start_time:.2f}s to {end_time:.2f}s")
+                        # New format: {original-file-name}-{start}-{duration}.mp4
+                        filename = f"{original_basename}-{start_time:.1f}s-{actual_duration:.1f}s.mp4"
+                        output_filename = os.path.join(output_dir, filename)
+                        
+                        print(f"Extracting rally {clip_idx}: {output_filename}")
                         
                         new = video.subclipped(start_time, end_time)
                         new.write_videofile(
