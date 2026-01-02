@@ -5,13 +5,14 @@ import torch
 import numpy as np
 from moviepy.video.io.VideoFileClip import VideoFileClip
 
-def process_video(video_path, output_dir, conf_threshold=0.5, min_duration=3.0, padding=2.0, progress_callback=None):
+def process_video(video_path, output_dir, original_filename=None, conf_threshold=0.5, min_duration=3.0, padding=2.0, progress_callback=None):
     """
     Process the video to extract rallies.
     
     Args:
-        video_path (str): Path to input video.
+        video_path (str): Path to input video (might be a temp file).
         output_dir (str): Directory to save clips.
+        original_filename (str, optional): The original name of the file if video_path is a temp file.
         conf_threshold (float): YOLO confidence threshold.
         min_duration (float): Minimum duration for a rally.
         padding (float): Seconds to add before/after rally.
@@ -126,7 +127,8 @@ def process_video(video_path, output_dir, conf_threshold=0.5, min_duration=3.0, 
     
     if segments:
         # Get original filename without extension
-        original_basename = os.path.splitext(os.path.basename(video_path))[0]
+        source_name = original_filename if original_filename else video_path
+        original_basename = os.path.splitext(os.path.basename(source_name))[0]
         
         try:
             with VideoFileClip(video_path) as video:

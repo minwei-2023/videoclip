@@ -23,10 +23,12 @@ with st.sidebar:
 input_method = st.radio("Select Input Method", ["Upload Video", "Local File Path"])
 
 video_path = None
+original_name = None
 
 if input_method == "Upload Video":
     uploaded_file = st.file_uploader("Choose a video file", type=['mp4', 'mov', 'avi'])
     if uploaded_file is not None:
+        original_name = uploaded_file.name
         # Save uploaded file to a temporary file
         tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
         tfile.write(uploaded_file.read())
@@ -36,6 +38,7 @@ else:
     local_path = st.text_input("Enter absolute path to video file (e.g., C:/Videos/match.mp4)")
     if local_path and os.path.exists(local_path):
         video_path = local_path
+        original_name = os.path.basename(local_path)
     elif local_path:
         st.error("File not found. Please check the path.")
 
@@ -61,6 +64,7 @@ if video_path is not None:
                 stats, clips = process_video(
                     video_path, 
                     output_dir, 
+                    original_filename=original_name,
                     conf_threshold=confidence, 
                     min_duration=min_rally_duration,
                     padding=padding,
