@@ -5,7 +5,7 @@ import torch
 import numpy as np
 from moviepy.video.io.VideoFileClip import VideoFileClip
 
-def process_video(video_path, output_dir, original_filename=None, conf_threshold=0.5, min_duration=3.0, padding=2.0, ball_timeout=2.0, progress_callback=None):
+def process_video(video_path, output_dir, original_filename=None, conf_threshold=0.5, min_duration=3.0, padding=2.0, ball_timeout=4.0, progress_callback=None):
     """
     Process the video to extract rallies.
     
