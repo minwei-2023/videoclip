@@ -123,7 +123,6 @@ def process_video(video_path, output_dir, original_filename=None, conf_threshold
     stats["raw_segments_count"] = len(segments)
     
     final_clips = []
-    clip_paths = []
     
     if segments:
         # Get original filename without extension
@@ -139,8 +138,7 @@ def process_video(video_path, output_dir, original_filename=None, conf_threshold
                         end_time = min(duration, (end_f / fps) + padding)
                         actual_duration = end_time - start_time
                         
-                        final_clips.append((start_time, end_time))
-                        clip_idx = len(final_clips)
+                        clip_idx = len(final_clips) + 1
                         
                         # New format: {original-file-name}-{start}-{duration}.mp4
                         filename = f"{original_basename}-{start_time:.1f}s-{actual_duration:.1f}s.mp4"
@@ -156,9 +154,15 @@ def process_video(video_path, output_dir, original_filename=None, conf_threshold
                             temp_audiofile=f'temp-audio-{clip_idx}.m4a', 
                             remove_temp=True
                         )
-                        clip_paths.append(output_filename)
+                        
+                        final_clips.append({
+                            "path": output_filename,
+                            "start_time": start_time,
+                            "duration": actual_duration,
+                            "index": clip_idx
+                        })
         except Exception as e:
             print(f"Error during extraction: {e}")
 
     stats["total_rallies"] = len(final_clips)
-    return stats, clip_paths
+    return stats, final_clips

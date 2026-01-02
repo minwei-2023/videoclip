@@ -9,6 +9,14 @@ st.set_page_config(page_title="Tennis Rally Extractor", layout="wide")
 st.title("🎾 Tennis Rally Extractor")
 st.markdown("Upload your tennis video to automatically extract rallies and remove downtime.")
 
+# Initialize session state for rallies
+if "rallies" not in st.session_state:
+    st.session_state.rallies = []
+if "selected_rally" not in st.session_state:
+    st.session_state.selected_rally = None
+if "main_video_start" not in st.session_state:
+    st.session_state.main_video_start = 0
+
 # Sidebar for settings
 with st.sidebar:
     st.header("Settings")
@@ -17,7 +25,11 @@ with st.sidebar:
     padding = st.number_input("Clip Padding (sec)", value=2.0)
     
     st.divider()
-    st.info("Ensure you have a GPU enabled for faster processing.")
+    if st.button("Clear Results"):
+        st.session_state.rallies = []
+        st.session_state.selected_rally = None
+        st.session_state.main_video_start = 0
+        st.rerun()
 
 # Input method selection
 input_method = st.radio("Select Input Method", ["Upload Video", "Local File Path"])
@@ -29,10 +41,13 @@ if input_method == "Upload Video":
     uploaded_file = st.file_uploader("Choose a video file", type=['mp4', 'mov', 'avi'])
     if uploaded_file is not None:
         original_name = uploaded_file.name
-        # Save uploaded file to a temporary file
-        tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
-        tfile.write(uploaded_file.read())
-        video_path = tfile.name
+        # Use a more stable temp path if we want to sync
+        temp_dir = "temp_uploads"
+        os.makedirs(temp_dir, exist_ok=True)
+        video_path = os.path.join(temp_dir, f"temp_{original_name}")
+        if not os.path.exists(video_path):
+            with open(video_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
 
 else:
     local_path = st.text_input("Enter absolute path to video file (e.g., C:/Videos/match.mp4)")
@@ -43,7 +58,9 @@ else:
         st.error("File not found. Please check the path.")
 
 if video_path is not None:
-    st.video(video_path)
+    st.subheader("Original Video")
+    # Main video jumps to start_time based on session state
+    st.video(video_path, start_time=st.session_state.main_video_start)
     
     if st.button("Analyze & Extract Rallies", type="primary"):
         progress_bar = st.progress(0)
@@ -51,16 +68,13 @@ if video_path is not None:
         
         with st.spinner("Processing video..."):
             try:
-                # Create output directory
                 output_dir = "output_clips"
                 os.makedirs(output_dir, exist_ok=True)
                 
-                # Callback for progress
                 def update_progress(p):
                     progress_bar.progress(p)
                     status_text.text(f"Processing: {int(p*100)}%")
 
-                # Call the processor
                 stats, clips = process_video(
                     video_path, 
                     output_dir, 
@@ -71,30 +85,41 @@ if video_path is not None:
                     progress_callback=update_progress
                 )
                 
-                st.success(f"Processing Complete! Found {len(clips)} rallies.")
-                
-                # Display Stats (Debug Info)
-                with st.expander("Debug Statistics", expanded=True):
-                    st.json(stats)
-                    if stats.get("frames_with_people", 0) == 0:
-                        st.warning("No people were detected. Try lowering the confidence threshold.")
-                    elif stats.get("total_rallies", 0) == 0:
-                        st.warning("People were detected, but no segments met the minimum duration. Try lowering the 'Min Rally Duration'.")
-                
-                # Display results
-                st.subheader("Extracted Rallies")
-                cols = st.columns(2)
-                for i, clip_path in enumerate(clips):
-                    with cols[i % 2]:
-                        st.markdown(f"**Rally {i+1}**")
-                        st.video(clip_path)
+                st.session_state.rallies = clips
+                st.session_state.stats = stats
+                st.success(f"Found {len(clips)} rallies.")
+                st.rerun() # Refresh to show results
                         
             except Exception as e:
                 st.error(f"An error occurred: {e}")
                 st.exception(e)
-            finally:
-                # Cleanup temp file
-                try:
-                    os.unlink(video_path)
-                except:
-                    pass
+
+# Rally Review Section
+if st.session_state.rallies:
+    st.divider()
+    st.header("🎾 Rally Review")
+    
+    col_player, col_list = st.columns([2, 1])
+    
+    with col_list:
+        st.subheader("Rallies Found")
+        # Display clickable list
+        for rally in st.session_state.rallies:
+            label = f"Rally {rally['index']} ({rally['start_time']:.1f}s, {rally['duration']:.1f}s)"
+            if st.button(label, key=f"btn_{rally['index']}", use_container_width=True):
+                st.session_state.selected_rally = rally
+                st.session_state.main_video_start = int(rally['start_time'])
+                st.rerun()
+
+    with col_player:
+        st.subheader("Clip Player")
+        if st.session_state.selected_rally:
+            rally = st.session_state.selected_rally
+            st.info(f"Viewing Rally #{rally['index']}")
+            st.video(rally['path'])
+        else:
+            st.write("Select a rally from the list to play it.")
+
+    with st.expander("Debug Statistics"):
+        if "stats" in st.session_state:
+            st.json(st.session_state.stats)
