@@ -58,10 +58,6 @@ else:
         st.error("File not found. Please check the path.")
 
 if video_path is not None:
-    st.subheader("Original Video")
-    # Main video jumps to start_time based on session state
-    st.video(video_path, start_time=st.session_state.main_video_start)
-    
     if st.button("Analyze & Extract Rallies", type="primary"):
         progress_bar = st.progress(0)
         status_text = st.empty()
@@ -99,26 +95,31 @@ if st.session_state.rallies:
     st.divider()
     st.header("🎾 Rally Review")
     
-    col_player, col_list = st.columns([2, 1])
+    # 3-column layout: Original Video | Clip Player | Rally List
+    col_original, col_clip, col_list = st.columns([1.5, 1.5, 1])
+    
+    with col_original:
+        st.subheader("Original Video")
+        st.video(video_path, start_time=st.session_state.main_video_start)
+    
+    with col_clip:
+        st.subheader("Clip Player")
+        if st.session_state.selected_rally:
+            rally = st.session_state.selected_rally
+            st.info(f"Rally #{rally['index']} - {rally['start_time']:.1f}s ({rally['duration']:.1f}s)")
+            st.video(rally['path'])
+        else:
+            st.write("Select a rally from the list →")
     
     with col_list:
-        st.subheader("Rallies Found")
+        st.subheader("Rallies")
         # Display clickable list
         for rally in st.session_state.rallies:
-            label = f"Rally {rally['index']} ({rally['start_time']:.1f}s, {rally['duration']:.1f}s)"
+            label = f"#{rally['index']} ({rally['start_time']:.1f}s)"
             if st.button(label, key=f"btn_{rally['index']}", use_container_width=True):
                 st.session_state.selected_rally = rally
                 st.session_state.main_video_start = int(rally['start_time'])
                 st.rerun()
-
-    with col_player:
-        st.subheader("Clip Player")
-        if st.session_state.selected_rally:
-            rally = st.session_state.selected_rally
-            st.info(f"Viewing Rally #{rally['index']}")
-            st.video(rally['path'])
-        else:
-            st.write("Select a rally from the list to play it.")
 
     with st.expander("Debug Statistics"):
         if "stats" in st.session_state:
