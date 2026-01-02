@@ -5,7 +5,7 @@ import torch
 import numpy as np
 from moviepy.video.io.VideoFileClip import VideoFileClip
 
-def process_video(video_path, output_dir, original_filename=None, conf_threshold=0.5, min_duration=3.0, padding=2.0, progress_callback=None):
+def process_video(video_path, output_dir, original_filename=None, conf_threshold=0.5, min_duration=3.0, padding=2.0, ball_timeout=2.0, progress_callback=None):
     """
     Process the video to extract rallies.
     
@@ -16,10 +16,11 @@ def process_video(video_path, output_dir, original_filename=None, conf_threshold
         conf_threshold (float): YOLO confidence threshold.
         min_duration (float): Minimum duration for a rally.
         padding (float): Seconds to add before/after rally.
+        ball_timeout (float): Seconds to wait for ball to reappear before ending rally.
         progress_callback (func): Function to update progress bar (0.0 to 1.0).
         
     Returns:
-        tuple: (stats_dict, list_of_clip_paths)
+        tuple: (stats_dict, list_of_clip_dicts)
     """
     # Load Model
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -48,7 +49,7 @@ def process_video(video_path, output_dir, original_filename=None, conf_threshold
     # State tracking
     is_in_rally = False
     last_ball_seen_frame = -1
-    out_of_frame_tolerance_frames = int(fps * 2.0)
+    out_of_frame_tolerance_frames = int(fps * ball_timeout)  # Use configurable timeout
     
     ball_detections_count = 0
     

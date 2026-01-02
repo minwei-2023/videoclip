@@ -23,6 +23,8 @@ with st.sidebar:
     confidence = st.slider("Player Detection Confidence", 0.1, 1.0, 0.5)
     min_rally_duration = st.number_input("Min Rally Duration (sec)", value=3.0)
     padding = st.number_input("Clip Padding (sec)", value=2.0)
+    ball_timeout = st.number_input("Ball Out-of-Frame Timeout (sec)", value=2.0, min_value=0.5, max_value=5.0, step=0.5, 
+                                    help="How long to wait for the ball to reappear before ending the rally")
     
     st.divider()
     if st.button("Clear Results"):
@@ -78,6 +80,7 @@ if video_path is not None:
                     conf_threshold=confidence, 
                     min_duration=min_rally_duration,
                     padding=padding,
+                    ball_timeout=ball_timeout,
                     progress_callback=update_progress
                 )
                 
