@@ -22,11 +22,18 @@ def process_video(video_path, output_dir, original_filename=None, conf_threshold
     Returns:
         tuple: (stats_dict, list_of_clip_dicts)
     """
-    # Load Model
+    # Load Models
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"Using device: {device}")
+    
+    # Object detection model for ball and person detection
     model = YOLO('yolov8n.pt') 
     model.to(device)
+    
+    # Pose estimation model for swing detection
+    pose_model = YOLO('yolov8n-pose.pt')
+    pose_model.to(device)
+    print("Loaded object detection and pose estimation models")
 
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
@@ -49,9 +56,16 @@ def process_video(video_path, output_dir, original_filename=None, conf_threshold
     # State tracking
     is_in_rally = False
     last_ball_seen_frame = -1
+    last_swing_detected_frame = -1
     out_of_frame_tolerance_frames = int(fps * ball_timeout)  # Use configurable timeout
     
     ball_detections_count = 0
+    swing_detections_count = 0
+    
+    # Pose keypoint indices (COCO format)
+    # 5: left shoulder, 6: right shoulder
+    # 7: left elbow, 8: right elbow
+    # 9: left wrist, 10: right wrist
     
     frame_idx = 0
     while cap.isOpened():
@@ -60,7 +74,7 @@ def process_video(video_path, output_dir, original_filename=None, conf_threshold
             break
         
         if frame_idx % skip_frames == 0:
-            # We use DETECION_IMGSZ to help find the small ball
+            # Object detection for ball and people
             results = model(frame, classes=TARGET_CLASSES, imgsz=DETECTION_IMGSZ, verbose=False)
             boxes = results[0].boxes
             
@@ -71,15 +85,51 @@ def process_video(video_path, output_dir, original_filename=None, conf_threshold
             if has_ball:
                 ball_detections_count += 1
                 last_ball_seen_frame = frame_idx
+            
+            # Pose estimation for swing detection
+            swing_detected = False
+            if len(people) > 0:
+                pose_results = pose_model(frame, verbose=False)
+                if len(pose_results) > 0 and pose_results[0].keypoints is not None:
+                    keypoints = pose_results[0].keypoints.data  # Shape: [num_people, 17, 3] (x, y, conf)
+                    
+                    for person_kp in keypoints:
+                        # Check if we have valid arm keypoints
+                        left_shoulder = person_kp[5]
+                        right_shoulder = person_kp[6]
+                        left_wrist = person_kp[9]
+                        right_wrist = person_kp[10]
+                        
+                        # Check confidence of keypoints
+                        if left_shoulder[2] > 0.5 and left_wrist[2] > 0.5:
+                            # Check if left arm is raised (wrist above shoulder)
+                            if left_wrist[1] < left_shoulder[1] - 30:  # Y decreases upward
+                                swing_detected = True
+                                break
+                        
+                        if right_shoulder[2] > 0.5 and right_wrist[2] > 0.5:
+                            # Check if right arm is raised (wrist above shoulder)
+                            if right_wrist[1] < right_shoulder[1] - 30:
+                                swing_detected = True
+                                break
+            
+            if swing_detected:
+                swing_detections_count += 1
+                last_swing_detected_frame = frame_idx
                 
-                # Rally start logic: Ball detected and at least 1 person visible
-                if not is_in_rally and len(people) >= 1:
+            # Rally start logic: Ball detected OR swing detected (with at least 1 person)
+            if not is_in_rally and len(people) >= 1:
+                if has_ball or swing_detected:
                     is_in_rally = True
-                    print(f"Rally started at frame {frame_idx} ({frame_idx/fps:.2f}s)")
+                    trigger = "ball" if has_ball else "swing"
+                    print(f"Rally started at frame {frame_idx} ({frame_idx/fps:.2f}s) - trigger: {trigger}")
 
             if is_in_rally:
-                # Rally persists as long as the ball was seen recently (within 2s)
-                if frame_idx - last_ball_seen_frame > out_of_frame_tolerance_frames:
+                # Rally persists as long as ball was seen recently OR swing was recent
+                frames_since_ball = frame_idx - last_ball_seen_frame
+                frames_since_swing = frame_idx - last_swing_detected_frame
+                
+                if frames_since_ball > out_of_frame_tolerance_frames and frames_since_swing > out_of_frame_tolerance_frames:
                     is_in_rally = False
                     print(f"Rally ended at frame {frame_idx} ({frame_idx/fps:.2f}s) (timeout)")
                 else:
@@ -102,6 +152,7 @@ def process_video(video_path, output_dir, original_filename=None, conf_threshold
         "total_frames": total_frames,
         "frames_with_activity": len(active_rally_frames),
         "ball_detections": ball_detections_count,
+        "swing_detections": swing_detections_count,
         "duration_processed": duration
     }
     
